@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MongoDB RAG Demo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --mdb-green:#00B35A;            /* verde más sobrio */
+      --mdb-green-light:#5CD699;      /* acento suave */
+      --mdb-ink:#0B1F2A;
+      --mdb-dark:#001118;
+    }
+    *{ font-family:'Inter',system-ui,-apple-system,sans-serif; }
+    body{ background:var(--mdb-dark); position:relative; overflow-x:hidden; color:#E5E7EB; }
+
+    /* fondo animado */
+    body::before{
+      content:'';
+      position:fixed; inset:0;
+      background:
+        radial-gradient(circle 1000px at 20% -10%, rgba(0,179,90,.20), transparent),
+        radial-gradient(circle 800px at 80% 100%, rgba(0,179,90,.12), transparent),
+        radial-gradient(circle 600px at 50% 50%, rgba(0,179,90,.08), transparent);
+      animation:gradientShift 22s ease-in-out infinite;
+      pointer-events:none;
+    }
+    @keyframes gradientShift{
+      0%,100%{ transform:rotate(0deg) scale(1); }
+      50%{ transform:rotate(180deg) scale(1.06); }
+    }
+
+    .particles{ position:fixed; inset:0; pointer-events:none; overflow:hidden; }
+    .particle{ position:absolute; width:2px; height:2px; background:var(--mdb-green); box-shadow:0 0 8px var(--mdb-green); opacity:0; animation:float 16s linear infinite; }
+    @keyframes float{
+      0%{ transform:translateY(100vh) translateX(0); opacity:0; }
+      10%{ opacity:.35; }
+      90%{ opacity:.35; }
+      100%{ transform:translateY(-10vh) translateX(80px); opacity:0; }
+    }
+
+    .glass{
+      background:linear-gradient(135deg, rgba(0,179,90,.05) 0%, rgba(11,31,42,.45) 50%, rgba(0,179,90,.03) 100%);
+      backdrop-filter:blur(18px) saturate(140%);
+      border:1px solid rgba(0,179,90,.22);
+      box-shadow:0 8px 28px rgba(0,179,90,.12), inset 0 1px 0 rgba(255,255,255,.05);
+      transition:.25s ease;
+    }
+    .glass:hover{ transform:translateY(-1px); border-color:rgba(0,179,90,.32); }
+
+    .badge{
+      background:linear-gradient(135deg, rgba(0,179,90,.18), rgba(0,179,90,.10));
+      border:1px solid rgba(0,179,90,.35);
+      color:var(--mdb-green-light);
+    }
+
+    .input-field{
+      background:linear-gradient(135deg, rgba(15,25,35,.85), rgba(11,31,42,.65));
+      border:1px solid rgba(0,179,90,.15);
+      transition:.25s ease;
+    }
+    .input-field:focus{
+      outline:none; border-color:var(--mdb-green);
+      box-shadow:0 0 0 3px rgba(0,179,90,.12);
+    }
+    .btn-primary{
+      background:linear-gradient(135deg, var(--mdb-green), #0a8f50);
+      color:#021b15; font-weight:600; box-shadow:0 6px 18px rgba(0,179,90,.32);
+      transition:.25s ease;
+    }
+    .btn-primary:hover{ transform:translateY(-1px); box-shadow:0 10px 24px rgba(0,179,90,.38); }
+
+    .result-card{
+      background:linear-gradient(135deg, rgba(11,31,42,.85) 0%, rgba(0,18,26,.62) 100%);
+      border:1px solid rgba(0,179,90,.16);
+      transition:.25s ease; opacity:0; transform:translateY(14px);
+      animation:slideUp .45s ease forwards;
+    }
+    @keyframes slideUp{ to{ opacity:1; transform:translateY(0);} }
+    .result-card:hover{ transform:translateY(-3px); border-color:rgba(0,179,90,.28); box-shadow:0 10px 26px rgba(0,179,90,.16); }
+
+    .answer-box{
+      background:linear-gradient(135deg, rgba(0,179,90,.06) 0%, rgba(11,31,42,.35) 100%);
+      border-left:3px solid var(--mdb-green);
+      border-radius:.75rem; padding:1.25rem;
+    }
+    .answer-title{ color:#D1FAE5; font-weight:600; margin-bottom:.25rem; }
+    .answer-section{ margin-top:.75rem; }
+    .answer-section h4{ color:#A7F3D0; font-weight:600; font-size:.9rem; margin-bottom:.25rem; }
+    .answer-section p, .answer-section li{ color:#E5E7EB; }
+    .answer-section ul{ list-style:disc; padding-left:1.2rem; }
+
+    .loading{ width:20px; height:20px; border:2px solid rgba(0,179,90,.22); border-top-color:var(--mdb-green); border-radius:50%; animation:spin 1s linear infinite; }
+    @keyframes spin{ to{ transform:rotate(360deg);} }
+
+    .severity-high{ color:#FCA5A5; }
+    .severity-medium{ color:#FCD34D; }
+    .severity-low{ color:#86EFAC; }
+
+    ::-webkit-scrollbar{ width:10px; height:10px; }
+    ::-webkit-scrollbar-track{ background:rgba(11,31,42,.5); border-radius:10px; }
+    ::-webkit-scrollbar-thumb{ background:linear-gradient(180deg, var(--mdb-green), #0a8f50); border-radius:10px; }
+    ::-webkit-scrollbar-thumb:hover{ background:#16a34a; }
+  </style>
+</head>
+
+<body>
+  <div class="particles" id="particlesContainer"></div>
+
+  <div class="relative z-10">
+    <header class="max-w-7xl mx-auto pt-12 pb-8 px-4">
+      <div class="flex items-center gap-4">
+        <div class="w-11 h-11 rounded-xl flex items-center justify-center" style="background:linear-gradient(135deg,var(--mdb-green),#0a8f50); box-shadow:0 0 24px rgba(0,179,90,.45)"></div>
+        <div>
+          <h1 class="text-3xl font-bold tracking-tight text-white">MongoDB RAG Demo</h1>
+          <p class="text-slate-400 mt-1 text-sm">Vector Search + AI-Powered Analysis</p>
+        </div>
+      </div>
+      <div class="mt-6 flex gap-6 text-sm">
+        <div class="flex items-center gap-2"><span class="w-2 h-2 bg-green-400/80 rounded-full animate-pulse"></span><span class="text-slate-400">Sistema activo</span></div>
+        <div class="flex items-center gap-2"><span class="text-slate-500">Base de datos:</span><span class="text-slate-300 font-medium">Atlas Vector</span></div>
+      </div>
+    </header>
+
+    <!-- MAIN: Solo buscador y resultados (sin panel de analytics) -->
+    <main class="max-w-7xl mx-auto px-4 grid grid-cols-1 gap-6 pb-12">
+      <section class="glass rounded-2xl p-6">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h2 class="text-xl font-semibold text-white">Búsqueda Inteligente</h2>
+            <p class="text-sm text-slate-400 mt-1">Consulta la base de conocimiento con IA</p>
+          </div>
+          <span class="badge rounded-full px-3 py-1 text-xs font-medium">RAG Activo</span>
+        </div>
+
+        <div class="space-y-4">
+          <div class="relative">
+            <input id="question" class="input-field w-full px-5 py-4 rounded-xl text-white placeholder-slate-500 pr-32" placeholder="Ej: Problemas de conectividad en Monterrey con clientes empresariales...">
+            <div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              <div class="flex items-center gap-1 px-2">
+                <label class="text-xs text-slate-500">Top K:</label>
+                <input id="topk" class="input-field px-2 py-1 rounded w-16 text-sm text-center" type="number" min="1" max="50" value="20">
+              </div>
+            </div>
+          </div>
+
+          <button id="askBtn" class="btn-primary w-full px-6 py-4 rounded-xl text-sm uppercase tracking-wider">
+            <span class="flex items-center justify-center gap-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.134 17 3 13.866 3 10C3 6.134 6.134 3 10 3C13.866 3 17 6.134 17 10Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              Realizar Búsqueda
+            </span>
+          </button>
+        </div>
+
+        <!-- Respuesta estructurada -->
+        <div id="answerContainer" class="mt-6 hidden">
+          <h3 class="text-sm font-medium text-slate-400 mb-3">Respuesta sintetizada</h3>
+          <div id="answer" class="answer-box text-slate-200">
+            <!-- Se formatea desde JS como secciones (Hallazgos / KPIs / Acciones) si es posible -->
+          </div>
+        </div>
+
+        <!-- Resultados: dos columnas en md+ -->
+        <div id="resultsContainer" class="mt-8 hidden">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-medium text-slate-300">Incidentes relacionados</h3>
+            <span id="resultCount" class="text-xs text-slate-500"></span>
+          </div>
+          <div id="hits" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- DASHBOARD FULL-WIDTH ABAJO -->
+    <section class="max-w-7xl mx-auto px-4 pb-16">
+      <div class="glass rounded-2xl p-6">
+        <h2 class="text-xl font-semibold text-white mb-4">Dashboard de MongoDB Charts</h2>
+        <p class="text-sm text-slate-400 mb-4">Visualización completa de métricas e insights</p>
+        <div class="rounded-xl border border-slate-800/60 overflow-hidden">
+          <div style="width:100%; height:75vh; overflow-y:auto;">
+            <iframe
+              style="width:100%; height:1200px; border:none; background:#0B1F2A; border-radius:10px;"
+              src="https://charts.mongodb.com/charts-gibran-demo-humwafx/embed/dashboards?id=f6a31e4c-3eb9-48c2-b98e-b37f295fd7a9&theme=dark&autoRefresh=true&maxDataAge=3600&showTitleAndDesc=false&scalingWidth=scale&scalingHeight=scale"></iframe>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="max-w-7xl mx-auto px-4 py-8 border-t border-slate-800/50 text-xs text-slate-400">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <span>MongoDB Atlas Vector Search</span><span>•</span><span>OpenAI</span><span>•</span><span>Tailwind</span>
+        </div>
+        <div class="flex items-center gap-2"><span class="w-2 h-2 bg-green-400/80 rounded-full"></span><span>Sistema operativo</span></div>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    // partículas
+    (function createParticles(){
+      const c = document.getElementById('particlesContainer');
+      for(let i=0;i<18;i++){
+        const p = document.createElement('div');
+        p.className='particle';
+        p.style.left = Math.random()*100+'%';
+        p.style.animationDelay = (Math.random()*14)+'s';
+        p.style.animationDuration = (16+Math.random()*10)+'s';
+        c.appendChild(p);
+      }
+    })();
+
+    const base = window.location.origin;
+
+    function getSeverityColor(sev){
+      const s = (sev||"").toString().toLowerCase();
+      if (["1","alta","critical","critica","high"].some(v => s.includes(v))) return 'severity-high';
+      if (["2","media","medium"].some(v => s.includes(v))) return 'severity-medium';
+      return 'severity-low';
+    }
+
+    function card(hit, i){
+      const delay = i * 0.05;
+      return `
+        <div class="result-card rounded-xl p-4" style="animation-delay:${delay}s">
+          <div class="flex items-start justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 bg-green-400/70 rounded-full animate-pulse"></div>
+              <span class="text-sm font-medium text-slate-300">INC-${hit.NUMBER || "—"}</span>
+            </div>
+            <span class="text-xs px-2 py-1 rounded-full bg-slate-800/60 text-slate-300">${hit.REGION || "N/A"}</span>
+          </div>
+
+          <h4 class="text-white font-medium mb-2 line-clamp-2">${hit.BRIEF_DESCRIPTION || "Sin descripción"}</h4>
+
+          <div class="grid grid-cols-2 gap-2 text-xs mb-3">
+            <div class="flex items-center gap-1"><span class="text-slate-500">Producto:</span><span class="text-slate-300 font-medium">${hit.TELMEX_PRODUCT || "—"}</span></div>
+            <div class="flex items-center gap-1"><span class="text-slate-500">Tipo:</span><span class="text-slate-300 font-medium">${hit.TYPE || "—"}</span></div>
+            <div class="flex items-center gap-1"><span class="text-slate-500">Severidad:</span><span class="font-medium ${getSeverityColor(hit.SEVERITY)}">${hit.SEVERITY || "—"}</span></div>
+            <div class="flex items-center gap-1"><span class="text-slate-500">Vendor:</span><span class="text-slate-300 font-medium">${hit.VENDOR || "—"}</span></div>
+          </div>
+
+          <div class="pt-3 border-t border-slate-700/50 flex items-center justify-between">
+            <span class="text-xs text-slate-500">📍 ${hit.LOCATION || "Sin ubicación"}</span>
+            <span class="text-[11px] px-2 py-1 rounded bg-emerald-900/20 text-emerald-300 font-mono">score ${(hit.score||0).toFixed(3)}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    // Formateo bonito de respuesta (si el LLM ya manda secciones, respétalas; si no, intenta dividir por dobles saltos)
+    function prettyAnswer(text){
+      if (!text || typeof text !== 'string') return "(sin respuesta del LLM)";
+      const parts = text.split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
+      if (parts.length < 2) return `<div class="answer-section"><p>${text.replace(/\n/g,'<br>')}</p></div>`;
+
+      const first = parts.shift();
+      let html = `<div class="answer-title">${first}</div>`;
+      parts.forEach(block => {
+        // intenta encabezado + lista
+        const lines = block.split('\n').filter(Boolean);
+        if (lines.length > 1){
+          const title = lines.shift();
+          html += `<div class="answer-section"><h4>${title}</h4><ul>${lines.map(l=>`<li>${l}</li>`).join('')}</ul></div>`;
+        } else {
+          html += `<div class="answer-section"><p>${block}</p></div>`;
+        }
+      });
+      return html;
+    }
+
+    async function ask(){
+      const qEl = document.getElementById('question');
+      const q = qEl.value.trim();
+      const topk = parseInt(document.getElementById('topk').value || "20", 10);
+      const answerContainer = document.getElementById('answerContainer');
+      const answerBox = document.getElementById('answer');
+      const resultsContainer = document.getElementById('resultsContainer');
+      const hitsBox = document.getElementById('hits');
+      const resultCount = document.getElementById('resultCount');
+      const btn = document.getElementById('askBtn');
+      const btnSpan = btn.querySelector('span');
+      const originalBtn = btnSpan.innerHTML;
+
+      if (!q){
+        qEl.classList.add('border-red-500');
+        setTimeout(()=> qEl.classList.remove('border-red-500'), 1200);
+        return;
+      }
+
+      btn.disabled = true;
+      btnSpan.innerHTML = '<div class="loading"></div> Procesando...';
+      answerContainer.classList.add('hidden');
+      resultsContainer.classList.add('hidden');
+      answerBox.textContent = 'Procesando...';
+
+      try{
+        const r = await fetch(base + "/ask", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ query:q, top_k:topk })
+        });
+
+        if (!r.ok){
+          const txt = await r.text();
+          answerBox.textContent = `Error ${r.status}: ${txt}`;
+          answerContainer.classList.remove('hidden');
+          return;
+        }
+
+        const data = await r.json();
+
+        // respuesta LLM flexible
+        const rawAns =
+          (typeof data.answer === "string" && data.answer) ||
+          (data.llm && typeof data.llm.answer === "string" && data.llm.answer) ||
+          (data.message && typeof data.message === "string" && data.message) ||
+          "";
+
+        answerBox.innerHTML = prettyAnswer(rawAns);
+        answerContainer.classList.remove('hidden');
+
+        // documentos: usa data.documents o vector.hits
+        const docs = Array.isArray(data.documents) ? data.documents :
+                     (data.vector && Array.isArray(data.vector.hits) ? data.vector.hits : []);
+        hitsBox.innerHTML = docs.map((d,i)=>card(d,i)).join("");
+        resultCount.textContent = `${docs.length} resultados encontrados`;
+        resultsContainer.classList.remove('hidden');
+
+      }catch(e){
+        answerBox.textContent = "Error al procesar la consulta: " + (e?.message || e);
+        answerContainer.classList.remove('hidden');
+      }finally{
+        btn.disabled = false;
+        btnSpan.innerHTML = originalBtn;
+      }
+    }
+
+    document.getElementById('askBtn').addEventListener('click', ask);
+    document.getElementById('question').addEventListener('keypress', e=>{
+      if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); ask(); }
+    });
+
+    window.addEventListener('load', () => document.getElementById('question').focus());
+  </script>
+</body>
+</html>

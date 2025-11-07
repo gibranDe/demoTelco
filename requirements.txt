@@ -1,0 +1,11 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pymongo[srv]==4.10.1
+python-dotenv==1.0.1
+pydantic==2.9.2
+voyageai==0.2.3
+openai==1.52.2
+
+Flask==3.0.3
+Flask-Cors==4.0.1
+requests==2.32.3
